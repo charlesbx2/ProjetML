@@ -75,32 +75,20 @@ def permute(x_init: np.ndarray,
 # Couche gaussienne (condition aux bords)
 # ---------------------------------------------------------------------------
 
+
 class GaussianLayer(nn.Module):
-    """
-    Multiplie la sortie du réseau par une enveloppe gaussienne isotrope :
-
-        g(r) = exp( -||r_i||^2 / (2*sigma) )   pour chaque particule i
-        boundary(x) = prod_i g(r_i)
-
-    sigma est un paramètre *entraînable*, initialisé à sigma_init.
-
-    Notes
-    -----
-    Dans la version TF originale, sigma est un scalaire partagé sur toutes
-    les coordonnées. On conserve ce choix ici.
-    """
-
+ 
     def __init__(self, n_particles: int, dim_physical: int, sigma_init: float = 2.0):
         super().__init__()
         self.n_particles = n_particles
         self.dim_physical = dim_physical
         # sigma entraînable (log-paramétré pour rester positif)
         self.log_sigma = nn.Parameter(torch.tensor(float(np.log(sigma_init))))
-
+ 
     @property
     def sigma(self) -> torch.Tensor:
         return torch.exp(self.log_sigma)   # garantit sigma > 0
-
+ 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         x : (batch, n_particles * dim_physical)
@@ -113,7 +101,7 @@ class GaussianLayer(nn.Module):
         per_particle = gauss.prod(dim=2)
         # Produit sur les particules → (B,)
         return per_particle.prod(dim=1)
-
+ 
 
 # ---------------------------------------------------------------------------
 # Architecture principale
@@ -263,13 +251,13 @@ def neural_fit(x: np.ndarray,
 
         # --- Optimiseur : SGD avec momentum (identique à la version TF) ---
         optimizer = optim.SGD(model.parameters(),
-                              lr=0.05,      
+                              lr=0.2,      
                               momentum=0.9,
-                              weight_decay=0.0,   # L2 géré manuellement
+                              weight_decay=1e-5,   
                               nesterov=False)
         # Décroissance du learning rate (équivalent à decay=1e-5 de Keras)
-        #scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=1 - 1e-5)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-4)
+        # scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=1 - 1e-5)
+        # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-4)
         
         mse_loss = nn.MSELoss()
         history = {'loss': [], 'val_loss': [], 'mae': [], 'val_mae': []}
@@ -282,14 +270,14 @@ def neural_fit(x: np.ndarray,
             for xb, yb in train_loader:
                 optimizer.zero_grad()
                 pred = model(xb)
-                #loss = mse_loss(pred, yb) + model.l2_loss()   #si on veut ajouter la régularisation L2
+                #loss = mse_loss(pred, yb) + model.l2_loss()   #si on veut ajouter la régularisation à la main L2
                 loss = mse_loss(pred, yb)
                 loss.backward()
                 optimizer.step()
                 train_loss += loss.item() * len(xb)
                 train_mae  += (pred - yb).abs().mean().item() * len(xb)
                 n_train    += len(xb)
-            scheduler.step(train_loss/n_train)  # ajustement du learning rate selon la validation
+            #scheduler.step(train_loss/n_train)  # ajustement du learning rate selon la validation
 
             # --- Validation ---
             model.eval()
@@ -319,9 +307,6 @@ def neural_fit(x: np.ndarray,
 
     model.eval()
 
-    # -----------------------------------------------------------------------
-    # Fonction de prédiction : x numpy → numpy
-    # -----------------------------------------------------------------------
     def fitfunc(x_np: np.ndarray, batch_size: int = 128) -> np.ndarray:
         """Évalue ψ_θ sur un tableau numpy, retourne un tableau numpy."""
         results = []
@@ -332,17 +317,7 @@ def neural_fit(x: np.ndarray,
         out = np.concatenate(results, axis=0)
         return out.reshape(-1,1)
 
-    # -----------------------------------------------------------------------
-    # Laplacien par différentiation automatique (∇²ψ)
-    #
-    # Stratégie :
-    #   1. On calcule ∂ψ/∂x_i pour chaque coordonnée i (via autograd)
-    #   2. On calcule ∂²ψ/∂x_i² pour chaque i (grad du grad)
-    #   3. On somme → laplacien scalaire
-    #
-    # Note : on utilise torch.autograd.grad avec create_graph=True pour
-    # permettre la différentiation du second ordre.
-    # -----------------------------------------------------------------------
+
     def d2_fitfunc(x_input) -> torch.Tensor:
         if isinstance(x_input, np.ndarray):
             x_t = torch.tensor(x_input, dtype=torch.float32, device=dev)
@@ -372,12 +347,21 @@ def neural_fit(x: np.ndarray,
             )[0]
             laplacian += grad2_i[:, i]
         laplacian=torch.clamp(laplacian, -1e5, 1e5)  # éviter les valeurs extrêmes
+        # print le laplacien si la valeur absolue dépasse un seuil pour debug
+        if torch.any(torch.abs(laplacian) > 1e4):
+            print("⚠️  Laplacian values (clipped) exceeding threshold:")
+            print(laplacian[torch.abs(laplacian) > 1e4])
+        
+        max_ratio = 1e3
+        psi_abs = psi_val.detach().abs() + 1e-10
+        laplacian = torch.clamp(laplacian,
+                            -max_ratio * psi_abs,
+                            max_ratio * psi_abs)
         return laplacian.cpu().detach().reshape(-1, 1).numpy()
+
     return fitfunc, d2_fitfunc
 
-# ---------------------------------------------------------------------------
-# Test rapide (si exécuté directement)
-# ---------------------------------------------------------------------------
+##################################################################################
 if __name__ == '__main__':
     import sys
     sys.path.insert(0, '.')
@@ -436,5 +420,5 @@ if __name__ == '__main__':
 
     x_torch = torch.tensor(samples[:10], dtype=torch.float32)
     lap = d2_fitfunc(x_torch)
-    print("∇²ψ (10 premiers points) :", lap.detach().numpy())
+    print("∇²ψ (10 premiers points) :", lap)
     print("Test PyTorch OK ✓")

@@ -155,6 +155,7 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
         psi_t = np.zeros((nsamples, t.shape[0]), dtype=complex)
         energies_t = np.zeros(t.shape[0])
         mse_t = np.zeros(t.shape[0])
+        d2psi_t = np.zeros((nsamples, t.shape[0]))
 
     else:
         filename = sys.argv[1]
@@ -164,6 +165,7 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
         psi_t = results['psi_t']
         psi = results['psi_t'][:, iteration]
         energies_t = results['energies_t'].real
+        d2psi_t = results.get('d2psi_t', np.zeros((nsamples, t.shape[0])))
         mse_t = results['mse_t'].real
         load_weights = 1
         eval_psi0, eval_d2psi0, P0 = fit_samples(x, psi, fitting_method, perm,
@@ -177,6 +179,7 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
 
     eval_psi = eval_psi0
     eval_d2psi = eval_d2psi0
+    
     P = P0
     start = datetime.now()
     for i in range(iteration, t.shape[0]):
@@ -198,6 +201,12 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
                 eval_psi, eval_d2psi, Hpsi, x0_arr, step, nsamples,
                 decorrelation_steps, xmax)
             print("Energy: ", energies_t[i], "Mse: ", mse_t[i])
+
+        d2psi_vals = eval_d2psi(samples)
+        d2psi_t[:, i] = d2psi_vals[:nsamples]  # garde exactement nsamples valeurs
+        print(f"  ∇²ψ : min={d2psi_vals.min():.3e}, "
+        f"max={d2psi_vals.max():.3e}, "
+        f"nan={np.isnan(d2psi_vals).sum()}")
 
         new_psi_t = propagate_samples(eval_psi, eval_d2psi, eval_V, eval_I, dt,
                                       samples, m, hbar, n_particles,
@@ -254,11 +263,12 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
             'psi_t': psi_t,
             'energies_t': energies_t,
             'mse_t': mse_t,
+            'd2psi_t': d2psi_t,
         }
         pickle.dump(results, open("intermediate_results.pkl", "wb"))
 
     print("total_time=", datetime.now() - start)
-    return x_t, psi_t, energies_t, mse_t
+    return x_t, psi_t, energies_t, mse_t, d2psi_t
 
 
 if __name__ == '__main__':
