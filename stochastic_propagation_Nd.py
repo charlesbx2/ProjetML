@@ -6,7 +6,11 @@ import itertools
 from sympy.combinatorics import Permutation
 import sample_distribution_Nd
 import sample_wavefunction_Nd
-import functional_neural_function_approximation_Nd as nn_fit
+from params import functionaltype
+if functionaltype==1:
+    import functional as nn_fit
+else:
+    import functional_neural_function_approximation_Nd as nn_fit
 from datetime import datetime
 import os
 import matplotlib.pyplot as plt
@@ -101,6 +105,11 @@ def fit_samples(x, psi, fitting_method, perm, parity, iteration):
     def fit_d2psi(x):
         f_d2 = fitfunc_d2(x).numpy()[:, 0]
         return f_d2
+    
+    if functionaltype == 1:
+            def fit_d2psi(x):
+                f_d2 = fitfunc_d2(x)[:, 0]
+                return f_d2
 
     def fit_P(x):
         return np.abs(fit_psi(x)**2)
@@ -211,7 +220,11 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
         fitfunc, d2_fitfunc = fitting_method(x, y, perm, parity, analysis_data,
                                              i, load_weights)
         history = analysis_data['history']
-        loss = history.history['loss'][-1]
+        if functionaltype == 0:
+            loss = history.history['loss'][-1]
+        else : 
+            loss = history['loss'][-1]
+        
 
         def fit_psi(x):
             f = fitfunc(x)[:, 0]
@@ -220,6 +233,11 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
         def fit_d2psi(x):
             f_d2 = (d2_fitfunc(x).numpy())[:, 0]
             return f_d2
+        
+        if functionaltype == 1:
+            def fit_d2psi(x):
+                f_d2 = (d2_fitfunc(x))[:, 0]
+                return f_d2
 
         def fit_P(x):
             return np.abs(fit_psi(x)**2)

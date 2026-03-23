@@ -4,7 +4,7 @@ nu = 0.001  # Offset of Coulomb interaction to avoid divergence
 hbar = 1.0  # Reduced Planck's constant
 m = 1.0  # Mass for harmonic oscillator potential
 omega = 1.0  # Frequency for harmonic oscillator potential
-tmax = 2.0  # Maximal time of imaginary time propagation
+tmax = 6 # Maximal time of imaginary time propagation
 xmax = 10.0  # Cutoff for generating samples in space
 offset = [-1.0, 1.0]  # Offset of initial non-interacting wavefunction
 normalize = True  # Normalize maximal value of wavefunction to 1 after every step?
@@ -15,7 +15,7 @@ dim_physical = 2  # Number of spatial dimensions
 
 ### Numerical parameters ###
 iteration = 0  # Initial step in the imaginary time propagation; the default is to start with 0
-n_t = 10  # Imaginary time propagation steps
+n_t = 30 # Imaginary time propagation steps
 n_x = 100  # Size of grid in space
 nsamples = 2000  # Number of samples used to represent the wavefunction
 decorrelation_steps = 5  # Decorrelation of samples in Monte Carlo
@@ -25,6 +25,10 @@ x0 = 0.0
 eta = 1e-2  # Discretization for finite difference
 perm_subset = 2  # Number of permutations to be considered at every iteration step; maximum value is n_particles!
 load_weights = 0  # Load neural network weights from previous fit
+
+### Modifications for neural network implementation ###
+
+functionaltype = 1 # 0 if original version, 1 if pytorch 
 
 ### Neural network parameters ###
 n_layers = 2

@@ -27,4 +27,6 @@ if __name__ == '__main__':
         'energies_t': energies_t_nn,
         'mse_t': mse_t_nn,
     }
-    pickle.dump(results, open("results.pkl", "wb"))
+    # Save results for plotting with name that changes with the parameters of the run
+    filename = f"results_{n_particles}_{dim_physical}_{nsamples}_{functionaltype}.pkl"
+    pickle.dump(results, open(filename, "wb"))
