@@ -282,7 +282,8 @@ def neural_fit(x: np.ndarray,
             for xb, yb in train_loader:
                 optimizer.zero_grad()
                 pred = model(xb)
-                loss = mse_loss(pred, yb) + model.l2_loss()
+                #loss = mse_loss(pred, yb) + model.l2_loss()   #si on veut ajouter la régularisation L2
+                loss = mse_loss(pred, yb)
                 loss.backward()
                 optimizer.step()
                 train_loss += loss.item() * len(xb)
