@@ -93,6 +93,7 @@ def neural_fit(x,
                epochs,
                batch_size,
                reg,
+               GD=0,
                normalize=True):
     tf.keras.backend.clear_session()
     activation = 'gelu'
@@ -119,10 +120,11 @@ def neural_fit(x,
         output = keras.layers.multiply([output_initial, boundary])
 
         model = keras.Model(inputs=[input], outputs=[output])
+
         opt = keras.optimizers.SGD(lr=0.2,
-                                   decay=1e-5,
-                                   momentum=0.9,
-                                   nesterov=False)
+                                       decay=1e-5,
+                                       momentum=0.9,
+                                       nesterov=False)
 
         print("Compiling model...")
         model.compile(loss="mean_squared_error",

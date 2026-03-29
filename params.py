@@ -36,6 +36,7 @@ layer_size = 2 * 64
 epochs = 50
 batch_size = 128
 reg = 1e-8
+GD = 1 # 0 for Adam, 1 for SGD
 
 ### Set up initial condition and potential evaluation: ###
 import harmonic_oscillator_Nd as ho
