@@ -33,8 +33,8 @@ functionaltype = 1 # 0 if original version, 1 if pytorch
 ### Neural network parameters ###
 n_layers = 2
 layer_size = 2 * 64
-epochs = 50
-batch_size = 128
+epochs = 30
+batch_size = 64
 reg = 1e-8
 GD = 1 # 0 for Adam, 1 for SGD
 

@@ -353,10 +353,6 @@ def neural_fit(x: np.ndarray,
             )[0]
             laplacian += grad2_i[:, i]
         laplacian=torch.clamp(laplacian, -1e5, 1e5)  # éviter les valeurs extrêmes
-        # print le laplacien si la valeur absolue dépasse un seuil pour debug
-        if torch.any(torch.abs(laplacian) > 1e4):
-            print("⚠️  Laplacian values (clipped) exceeding threshold:")
-            print(laplacian[torch.abs(laplacian) > 1e4])
         
         max_ratio = 1e3
         psi_abs = psi_val.detach().abs() + 1e-10
