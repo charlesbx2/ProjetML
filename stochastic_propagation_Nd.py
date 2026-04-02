@@ -1,16 +1,20 @@
 #!/usr/bin/env python
+from matplotlib.pylab import norm
 import numpy as np
 import math
 import random
 import itertools
+from torch import norm
 from sympy.combinatorics import Permutation
 import sample_distribution_Nd
 import sample_wavefunction_Nd
-from params import functionaltype
+from params import functionaltype, periodic
 if functionaltype==1:
     import functional as nn_fit
 else:
     import functional_neural_function_approximation_Nd as nn_fit
+if periodic:
+    from params import a, n_cells, V0, k_bloch
 from datetime import datetime
 import os
 import matplotlib.pyplot as plt
@@ -37,6 +41,24 @@ def permute(x_init, y_init, perm, parity, d, n_particles, bosonic):
         y_perm = np.append(y_perm, y_p)
     return x_perm.reshape(x_perm.shape[0], d * n_particles), y_perm
 
+def translate(x_init, y_init, k, a, n_cells):
+    x_perm = np.copy(x_init)
+    y_perm = np.copy(y_init)
+    
+    for n in range(1):
+        # Translations positives et négatives
+        for sign in [+1, -1]:
+            x_translated = x_init + sign * n * a
+            phase        = np.exp(1j * k * sign * n * a)
+            y_translated = y_init * phase
+            x_perm = np.append(x_perm, x_translated, axis=0)
+            y_perm = np.append(y_perm, y_translated)
+    
+    return x_perm, y_perm
+
+def identity(x_init, y_init):
+    return x_init, y_init
+
 
 """
 Given functions for evaluating the wavefunction psi, its laplacian d2psi and the
@@ -51,7 +73,15 @@ def propagate_samples(psi, d2psi, V, I, dt, x, m, hbar, n_particles, dim):
     return psi_x - (1j * dt / hbar) * (-(hbar**2) / (2 * m) * d2psi_x +
                                        (V(x) + I(x)) * psi_x)
 
-
+def propagate_samples(psi, d2psi, V, I, dt, x, m, hbar, n_particles, dim, k):
+    psi_x   = psi(x)
+    d2psi_x = d2psi(x)
+    E_drift = (hbar**2 * k**2) / (2 * m)  # énergie cinétique de dérive
+    return psi_x - (dt / hbar) * (
+        -(hbar**2)/(2*m) * d2psi_x 
+        + (V(x) + I(x)) * psi_x
+        - E_drift * psi_x  # soustraction de la dérive
+    )
 """
 Obtain a fitting method based on neural networks.
 """
@@ -94,7 +124,8 @@ def fit_samples(x, psi, fitting_method, perm, parity, iteration):
     psi = psi.reshape(psi.shape[0], 1)
     load_weights = 1
     analysis_data = {}
-    fitfunc, fitfunc_d2 = fitting_method(x, np.real(psi), perm, parity,
+    psi_input = np.real(psi) if not periodic else psi
+    fitfunc, fitfunc_d2 = fitting_method(x, psi_input, perm, parity,
                                          analysis_data, iteration,
                                          load_weights)
 
@@ -112,7 +143,7 @@ def fit_samples(x, psi, fitting_method, perm, parity, iteration):
                 return f_d2
 
     def fit_P(x):
-        return np.abs(fit_psi(x)**2)
+        return np.abs(fit_psi(x))**2
 
     return fit_psi, fit_d2psi, fit_P
 
@@ -155,7 +186,7 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
         psi_t = np.zeros((nsamples, t.shape[0]), dtype=complex)
         energies_t = np.zeros(t.shape[0])
         mse_t = np.zeros(t.shape[0])
-        d2psi_t = np.zeros((nsamples, t.shape[0]))
+        d2psi_t = np.zeros((nsamples, t.shape[0]), dtype=complex)
 
     else:
         filename = sys.argv[1]
@@ -201,6 +232,8 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
                 eval_psi, eval_d2psi, Hpsi, x0_arr, step, nsamples,
                 decorrelation_steps, xmax)
             print("Energy: ", energies_t[i], "Mse: ", mse_t[i])
+            V_mean = np.mean(eval_V(samples))
+            print(f"  <V> = {V_mean:.4f}")
 
         d2psi_vals = eval_d2psi(samples)
         d2psi_t[:, i] = d2psi_vals[:nsamples]  # garde exactement nsamples valeurs
@@ -210,22 +243,36 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
 
         new_psi_t = propagate_samples(eval_psi, eval_d2psi, eval_V, eval_I, dt,
                                       samples, m, hbar, n_particles,
-                                      dim_physical)
-        psi = new_psi_t.real
+                                      dim_physical, k_bloch if periodic else None)
+        #psi = new_psi_t.real
+        if periodic:
+            psi=new_psi_t
         average_value = np.max(np.abs(psi))
         if normalize:
-            average_value = np.max(np.abs(psi))
-            psi = psi.reshape(psi.shape[0], 1) / average_value
+            #average_value = np.max(np.abs(psi))
+            #psi = psi.reshape(psi.shape[0], 1) / average_value
+            norm = np.sqrt(np.mean(np.abs(psi)**2))  # norme L2 empirique
+            if norm > 1e-10:
+                psi = psi.reshape(psi.shape[0], 1) / norm
 
         subset = random.sample(np.arange(0, len(parity)).tolist(), perm_subset)
         subset.sort()
         perm = [perm[i] for i in subset]
         parity = [parity[i] for i in subset]
-        x, y = permute(samples, psi, perm, parity, dim_physical, n_particles,
-                       bosonic)
-
+        
+        x,y= identity(samples, psi)
+        
+        if periodic:
+            x, y = translate(samples, psi, k_bloch, a, n_cells)
+        else:
+            x, y = permute(samples, psi, perm, parity, dim_physical, n_particles, bosonic)
+        
+        
         analysis_data = {}
         load_weights = 0
+        
+
+        ####changed
         fitfunc, d2_fitfunc = fitting_method(x, y, perm, parity, analysis_data,
                                              i, load_weights)
         history = analysis_data['history']
@@ -249,7 +296,7 @@ def propagate_in_time(iteration, eval_psi0, eval_V, eval_I, load_weights, U,
                 return f_d2
 
         def fit_P(x):
-            return np.abs(fit_psi(x)**2)
+            return np.abs(fit_psi(x))**2
 
         eval_psi = fit_psi
         eval_d2psi = fit_d2psi

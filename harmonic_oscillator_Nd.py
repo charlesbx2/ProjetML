@@ -58,13 +58,88 @@ def eigenfunction_samples(n, x, n_particles, dim_physical, offset, hbar, m,
     return psi
 
 
+def bloch_initial_state(x, k, V0, a, hbar, m):
+    """
+    Condition initiale : état de Bloch perturbatif au premier ordre en V0.
+    
+    Pour un potentiel V(x) = -V0 * cos(2πx/a), la solution perturbative
+    de l'équation de Schrödinger donne :
+    
+        ψ_k(x) = e^{ikx} * [1 + (mV0/ℏ²) * sum_{G≠0} e^{iGx} / (k²-(k+G)²)]
+    
+    où G = 2πn/a sont les vecteurs du réseau réciproque.
+    On ne garde que les deux premiers vecteurs G = ±2π/a.
+    
+    Pour k=0 : ψ réel, proportionnel à 1 + c*cos(2πx/a)
+    Pour k≠0 : ψ complexe, onde plane modulée par le réseau
+    
+    x  : (nsamples, 1)
+    k  : vecteur d'onde (scalaire), dans [-π/a, π/a]
+    V0 : profondeur du potentiel
+    a  : paramètre de maille
+    """
+    x1d = x[:, 0]          # (nsamples,)
+    G   = 2 * np.pi / a    # premier vecteur du réseau réciproque
+
+    # Énergie cinétique de l'onde plane k et des ondes diffractées k±G
+    # (en unités ℏ²/2m)
+    def E_kin(q):
+        return (hbar ** 2) * (q ** 2) / (2 * m)
+
+    E_k  = E_kin(k)
+    E_kG = E_kin(k + G)    # énergie de k+G
+    E_km = E_kin(k - G)    # énergie de k-G
+
+    # Coefficients perturbatifs du premier ordre
+    # c± = (-V0/2) / (E_k - E_{k±G})
+    # Le -V0/2 vient du développement de Fourier : V(x) = -V0*cos(Gx) = -V0/2*(e^{iGx}+e^{-iGx})
+    denom_plus  = E_k - E_kG
+    denom_minus = E_k - E_km
+
+    # Évite la divergence à la zone de Brillouin (k = ±π/a)
+    # où E_k = E_{k-G} (dégénérescence)
+    eps = 1e-6 * E_kin(np.pi / a)   # seuil relatif à l'énergie de bord de zone
+    if np.abs(denom_plus)  < eps:
+        denom_plus  = np.sign(denom_plus  + 1e-30) * eps
+    if np.abs(denom_minus) < eps:
+        denom_minus = np.sign(denom_minus + 1e-30) * eps
+
+    c_plus  = (-V0 / 2) / denom_plus
+    c_minus = (-V0 / 2) / denom_minus
+
+    # Fonction de Bloch perturbative :
+    # ψ_k(x) = e^{ikx} * (1 + c+ * e^{iGx} + c- * e^{-iGx})
+    #         = e^{ikx} + c+ * e^{i(k+G)x} + c- * e^{i(k-G)x}
+    psi = (  np.exp(1j * k       * x1d)
+           + c_plus  * np.exp(1j * (k + G) * x1d)
+           + c_minus * np.exp(1j * (k - G) * x1d))
+
+    # Pour k=0 la solution est réelle — on force pour éviter une partie
+    # imaginaire résiduelle due aux arrondis flottants
+    if np.abs(k) < 1e-10:
+        psi = psi.real
+
+    return psi  # (nsamples,)
+
+def bloch_initial_state(x, k, V0, a, hbar, m):
+    """
+    Condition initiale perturbative correcte.
+    u_k maximal là où V est minimal (puits du potentiel).
+    V(x) = -V0*cos(2πx/a) est minimal quand cos = +1, i.e. x = 0, a, 2a...
+    u_k doit être maximal en ces points → u_k ∝ 1 - ε*cos(2πx/a)
+    avec ε > 0
+    """
+    epsilon = m * V0 * a**2 / (4 * np.pi**2 * hbar**2)  # coefficient perturbatif
+    u_k = 1.0 - epsilon * np.cos(2 * np.pi * x[:, 0] / a)  # ← signe moins
+    return u_k * np.exp(1j * k * x[:, 0])
+
 def energy(n, X, U, nu, hbar, m, omega):
     H = hamiltonian(X, U, nu, hbar, m, omega)
     w, v = LA.eig(H)
     w.sort()
     return hbar * omega * np.real(w[n])
 
-
+"""
 def laplacian_2D(N):
     I = np.eye(N)
     L1 = -3.0 * np.eye(N)
@@ -88,7 +163,15 @@ def laplacian_2D(N):
     L[0:N, 0:N] = L1
     L[(N - 1) * N:N * N, (N - 1) * N:N * N] = L1
     return L
+"""
 
+def potential_periodic(X, V0, a):
+    """
+    X : (nsamples, dim) ou (nsamples, n_particles, dim_physical)
+    V0 : profondeur du potentiel (en unités de hbar²/2m)
+    a  : paramètre de maille
+    """
+    return -V0 * np.cos(2 * np.pi * X / a).sum(axis=-1)
 
 def potential(X, m, omega):
     return 0.5 * m * (omega**2) * np.sum(X * X, axis=-1)
